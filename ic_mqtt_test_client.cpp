@@ -20,7 +20,7 @@ void Ic_mqtt_test_client::on_btn_connect_gateway_clicked()
     complete_package_array_ = new QByteArray();
     size_complete_package_ = 0;
     socket_ = new QTcpSocket(this);
-    socket_->connectToHost("localhost",1234);
+    socket_->connectToHost("localhost",27027);
     connect(socket_,SIGNAL(readyRead()), this, SLOT(my_ready_read()));
     connect(this,SIGNAL(complete_package_received(QByteArray)), this, SLOT(process_tcp_package(QByteArray)));
 }
