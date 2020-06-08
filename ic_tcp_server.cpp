@@ -1,39 +1,51 @@
-#include "ic_mqtt_test_client.h"
-#include "ui_ic_mqtt_test_client.h"
+#include "ic_tcp_server.h"
 
-Ic_mqtt_test_client::Ic_mqtt_test_client(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::Ic_mqtt_test_client)
+Ic_tcp_server::Ic_tcp_server(QObject *parent)
+    : QObject(parent)
 {
-    ui->setupUi(this);
-}
-
-Ic_mqtt_test_client::~Ic_mqtt_test_client()
-{
-    delete ui;
-}
-
-
-void Ic_mqtt_test_client::on_btn_connect_gateway_clicked()
-{
-    gateway_confirmation=false;
+    server_ = new QTcpServer(this);
+    socket_ = nullptr;
     complete_package_array_ = new QByteArray();
     size_complete_package_ = 0;
-    socket_ = new QTcpSocket(this);
-    socket_->connectToHost("localhost",27027);
-    connect(socket_,SIGNAL(readyRead()), this, SLOT(my_ready_read()));
-    connect(this,SIGNAL(complete_package_received(QByteArray)), this, SLOT(process_tcp_package(QByteArray)));
+
+    connect(server_, SIGNAL(newConnection()), this, SLOT(new_connection()));
 }
 
-
-void Ic_mqtt_test_client::on_btn_send_handshake_clicked()
+Ic_tcp_server::~Ic_tcp_server()
 {
-
-    send_out_handshake_package();
+    clean_up();
 }
 
+void Ic_tcp_server::clean_up()
+{
+    if (complete_package_array_)
+    {
+        delete complete_package_array_;
+        complete_package_array_ = nullptr;
+    }
+}
 
-void Ic_mqtt_test_client::my_ready_read()
+void Ic_tcp_server::new_connection()
+{
+    if (socket_)
+    {
+        if (socket_->state() == QAbstractSocket::UnconnectedState)
+        {
+            socket_->close();
+            socket_->deleteLater();
+            socket_ = server_->nextPendingConnection();
+            connect(socket_, SIGNAL(readyRead()), this, SLOT(my_ready_read()));
+        }
+    }
+    else
+    {
+        socket_ = server_->nextPendingConnection();
+        connect(socket_, SIGNAL(readyRead()), this, SLOT(my_ready_read()));
+    }
+
+}
+
+void Ic_tcp_server::my_ready_read()
 {
 
     int numBytesAvailable = socket_->bytesAvailable();
@@ -67,61 +79,17 @@ void Ic_mqtt_test_client::my_ready_read()
     }
 }
 
-void Ic_mqtt_test_client::process_tcp_package(QByteArray package)
+void Ic_tcp_server::listen_to_port(qint16 port)
 {
-    // Get Message Type:
-    QDataStream ds(&package, QIODevice::ReadOnly);
-
-    QString messageType;
-    ds >> messageType;
-
-    //Handshake
-    if (messageType == "RETURN_HANDSHAKE")
-    {
-        gateway_confirmation = true;
-        send_out_double_value();
-        return;
-    }
-
+    server_->listen(QHostAddress::Any, port);
 }
 
-void Ic_mqtt_test_client::send_out_handshake_package()
+void Ic_tcp_server::send_out_package(QByteArray package)
 {
-
-    // Generate Package:
-    QByteArray package;
-    QDataStream ds(&package, QIODevice::WriteOnly);
-
-    // Message Type:
-    QString packageType = "FIRST_HANDSHAKE";
-    ds << packageType;
-
     write_data(package);
-
 }
 
-void Ic_mqtt_test_client::send_out_double_value()
-{
-
-    if(gateway_confirmation)
-    {
-        // Generate Package:
-        QByteArray double_value_package;
-        QDataStream ds(&double_value_package, QIODevice::WriteOnly);
-
-        // Message Type:
-        QString packageType    = "PUBLISH_DV";
-        QString parameterName  = "STM/DIAMETER";
-        QString parameterValue = "305.57";
-        ds << packageType;
-        ds << parameterName;
-        ds << parameterValue;
-
-        write_data(double_value_package);
-    }
-}
-
-bool Ic_mqtt_test_client::write_data(QByteArray data)
+bool Ic_tcp_server::write_data(QByteArray data)
 {
     if (!socket_) return false;
 
@@ -138,12 +106,12 @@ bool Ic_mqtt_test_client::write_data(QByteArray data)
     }
 }
 
-void Ic_mqtt_test_client::close()
+void Ic_tcp_server::close()
 {
-    if (socket_)
+    if (server_)
     {
-        socket_->close();
-        socket_->deleteLater();
+        server_->close();
+        server_->deleteLater();
     }
 
     if (socket_)
@@ -158,7 +126,7 @@ void Ic_mqtt_test_client::close()
 //--------------------------------------------------------------------
 // HELPERS
 //--------------------------------------------------------------------
-QByteArray Ic_mqtt_test_client::int_to_array(qint32 source) //Use qint32 to ensure that the number have 4 bytes
+QByteArray Ic_tcp_server::int_to_array(qint32 source) //Use qint32 to ensure that the number have 4 bytes
 {
     //Avoid use of cast, this is the Qt way to serialize objects
     QByteArray temp;
@@ -167,7 +135,7 @@ QByteArray Ic_mqtt_test_client::int_to_array(qint32 source) //Use qint32 to ensu
     return temp;
 }
 
-qint32 Ic_mqtt_test_client::array_to_int(QByteArray source)
+qint32 Ic_tcp_server::array_to_int(QByteArray source)
 {
     qint32 temp;
     QDataStream data(&source, QIODevice::ReadWrite);
